@@ -1,11 +1,21 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 
-import { BlobEntry } from './entry'
+import { isUtf8 } from 'buffer'
+import { spawn } from 'child_process'
+import { applyPatch, createTwoFilesPatch } from 'diff'
+import { mergeDiff3 } from 'node-diff3'
 import { startActionSpinner, stopActionSpinner } from '../util/cli'
-import { readFile } from '../util/fs'
+import { readFile, withTempDir } from '../util/fs'
+import { BlobEntry } from './entry'
 
-export async function copyBlobs(entries: Iterable<BlobEntry>, srcDir: string, destDir: string) {
+export async function copyBlobs(
+  entries: Iterable<BlobEntry>,
+  srcDir: string,
+  destDir: string,
+  patchesDir: string,
+  updatePatches: boolean,
+) {
   let spinner = startActionSpinner('Copying files')
 
   for (let entry of entries) {
@@ -98,6 +108,18 @@ export async function copyBlobs(entries: Iterable<BlobEntry>, srcDir: string, de
         '-----END CERTIFICATE-----\n'
     }
 
+    if (entry.patches.length > 0) {
+      let content = await fs.readFile(srcPath)
+      if (!isUtf8(content)) {
+        throw new Error(`File '${srcPath}' is not UTF-8 but was added to patch config`)
+      }
+      // stop spinner so that it doesn't mess with terminal while editor is open
+      if (updatePatches) {
+        stopActionSpinner(spinner)
+      }
+      patched = await patch(content.toString('utf-8'), entry.patches, patchesDir, entry.srcPath, updatePatches)
+    }
+
     if (patched !== undefined) {
       await fs.writeFile(outPath, patched)
     } else {
@@ -106,4 +128,120 @@ export async function copyBlobs(entries: Iterable<BlobEntry>, srcDir: string, de
   }
 
   stopActionSpinner(spinner)
+}
+
+async function editText(text: string, label: string) {
+  return withTempDir<string>(async tmp => {
+    const tmpFile = path.join(tmp.dir, label.replace(/[\\/]/g, '_'))
+    await fs.writeFile(tmpFile, text, { encoding: 'utf-8' })
+
+    await new Promise<void>((resolve, reject) => {
+      const editor = process.env['EDITOR'] ?? 'vim';
+      const child = spawn(editor, [tmpFile], { stdio: 'inherit' })
+      child.on('exit', code => {
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(new Error(`${editor} exited with ${code}`))
+        }
+      })
+      child.on('error', reject)
+    })
+
+    return fs.readFile(tmpFile, { encoding: 'utf-8' })
+  })
+}
+
+async function loadText(path: string) {
+  try {
+    return await fs.readFile(path, { encoding: 'utf-8' })
+  } catch {
+    return null
+  }
+}
+
+async function waitForEnter(message: string) {
+  return new Promise<void>(resolve => {
+    process.stdout.write(`${message} - press <Enter> to continue... `)
+    process.stdin.resume()
+    process.stdin.once('data', () => {
+      process.stdin.pause()
+      resolve()
+    })
+  })
+}
+
+async function patch(
+  text: string,
+  patchIds: string[],
+  patchesDir: string,
+  fileLabel: string,
+  updatePatches: boolean,
+) {
+  let ours = text
+
+  for (const [i, idRaw] of patchIds.entries()) {
+    // prefix with file info to keep patches organized
+    const prefix = fileLabel.replace(/[\\/]/g, '_')
+    // index to keep patches ordered
+    const index = (i + 1).toString().padStart(4, '0')
+    // We allow whitespaces in .yml config, but replace them with '-' internally
+    const id = `${prefix}-${index}-${idRaw.replace(/\s/g, '-')}`
+    const pathDiff = path.join(patchesDir, `${id}.diff`)
+    const pathBase = path.join(patchesDir, `${id}.base`)
+
+    const diff = await loadText(pathDiff)
+    const base = await loadText(pathBase) ?? ours
+
+    let patchError = null
+
+    if (diff) {
+      const patched = applyPatch(ours, diff)
+      if (patched) {
+        ours = patched
+        continue
+      }
+      patchError = `${id} no longer applies cleanly`
+    } else {
+      patchError = `missing patch ${id}`
+    }
+
+    if (patchError) {
+      if (updatePatches) {
+        console.warn(patchError)
+      } else {
+        throw new Error(`${patchError}; rerun with --updatePatches`)
+      }
+    }
+
+    let merged = ours
+
+    if (diff) {
+      const theirs = applyPatch(base, diff)
+      if (!theirs) {
+        throw new Error(`cannot replay ${id}`)
+      }
+      merged = mergeDiff3(
+        ours.split('\n'),
+        base.split('\n'),
+        theirs.split('\n'),
+        { label: { a: 'CURRENT', o: 'BASE', b: id } },
+      ).result.join('\n')
+    }
+
+    await waitForEnter(`opening editor to resolve`)
+    const resolved = await editText(merged, fileLabel)
+
+    if (resolved != ours) {
+      await fs.mkdir(patchesDir, { recursive: true })
+      const newDiff = createTwoFilesPatch(fileLabel, fileLabel, ours, resolved)
+      await fs.writeFile(pathDiff, newDiff, { encoding: 'utf-8' })
+      await fs.writeFile(pathBase, ours, { encoding: 'utf-8' })
+      console.log(`saved ${id}`)
+    }
+
+    ours = resolved
+  }
+
+  return ours
 }

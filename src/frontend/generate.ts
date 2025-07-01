@@ -14,6 +14,7 @@ import { findOverrideModules } from '../build/overrides'
 import { removeSelfModules } from '../build/soong-info'
 import { DeviceConfig } from '../config/device'
 import { filterKeys, Filters, filterValue, filterValues } from '../config/filters'
+import { Patch } from '../config/patch'
 import { collectSystemState, parseSystemState, SystemState } from '../config/system-state'
 import { ANDROID_INFO, extractFactoryFirmware, generateAndroidInfo, writeFirmwareImages } from '../images/firmware'
 import {
@@ -56,10 +57,16 @@ export async function enumerateFiles(
   spinner: ora.Ora,
   filters: Filters,
   forceIncludeFilters: Filters | null,
+  patches: Patch[],
   namedEntries: Map<string, BlobEntry>,
   customState: SystemState | null,
   stockSrc: string,
 ) {
+  let namedPatches = new Map<string, string[]>()
+  for (let patch of patches) {
+    namedPatches.set(patch.path, patch.apply)
+  }
+
   for (let partition of ALL_SYS_PARTITIONS) {
     let filesRef = await listPart(partition, stockSrc, filters)
     if (filesRef == null) continue
@@ -78,6 +85,7 @@ export async function enumerateFiles(
 
     for (let combinedPartPath of missingFiles) {
       let entry = combinedPartPathToEntry(partition, combinedPartPath)
+      entry.patches = namedPatches.get(combinedPartPath) ?? [];
       namedEntries.set(combinedPartPath, entry)
     }
 

@@ -12,6 +12,7 @@ import {
   CARRIER_SETTINGS_DIR,
   CARRIER_SETTINGS_FACTORY_PATH,
   COLLECTED_SYSTEM_STATE_DIR,
+  FILE_PATCHES_DIR,
   OS_CHECKOUT_DIR,
   VENDOR_MODULE_SKELS_DIR,
   VENDOR_MODULE_SPECS_DIR,
@@ -64,6 +65,7 @@ const doDevice = (
   buildId: string | undefined,
   factoryPath: string | undefined,
   skipCopy: boolean,
+  updatePatches: boolean,
   useTemp: boolean,
 ) =>
   withTempDir(async tmp => {
@@ -85,7 +87,7 @@ const doDevice = (
 
     // 1. Diff files
     await withSpinner('Enumerating files', spinner =>
-      enumerateFiles(spinner, config.filters.files, config.filters.dep_files, namedEntries, customState, stockSrc),
+      enumerateFiles(spinner, config.filters.files, config.filters.dep_files, config.patches.text_files, namedEntries, customState, stockSrc),
     )
 
     // 2. Overrides
@@ -116,7 +118,7 @@ const doDevice = (
     // 5. Extract
     // Copy blobs (this has its own spinner)
     if (config.generate.files && !skipCopy) {
-      await copyBlobs(entries, stockSrc, dirs.proprietary)
+      await copyBlobs(entries, stockSrc, dirs.proprietary, getPatchesDir(config), updatePatches)
     }
 
     // 6. Props
@@ -221,6 +223,10 @@ export default class GenerateFull extends Command {
         'update vendor module FileTreeSpec in vendor-specs/ instead of requiring it to be equal to the reference (current) spec',
     }),
 
+    updatePatches: Flags.boolean({
+      description: 'interactively update file patches in a text editor',
+    }),
+
     doNotReplaceCarrierSettings: Flags.boolean({
       description: `do not replace carrier settings with updated ones from ${CARRIER_SETTINGS_DIR}`,
     }),
@@ -279,6 +285,7 @@ export default class GenerateFull extends Command {
           deviceBuildId,
           factoryPath,
           flags.skipCopy,
+          flags.updatePatches,
           flags.useTemp,
         )
 
@@ -467,6 +474,10 @@ function getVendorModuleSkelDir(config: DeviceConfig) {
 
 function getCarrierSettingsVendorDir(dirs: VendorDirectories) {
   return path.join(dirs.proprietary, CARRIER_SETTINGS_FACTORY_PATH)
+}
+
+function getPatchesDir(config: DeviceConfig) {
+  return path.join(FILE_PATCHES_DIR, config.device.vendor, config.device.name)
 }
 
 // soong detects .bp, .mk files everywhere in OS checkout dir, add '.skip' suffix to the ones in vendor-skels/ dir

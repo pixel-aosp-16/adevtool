@@ -8,6 +8,7 @@ import path from 'path'
 
 import { loadAndMergeConfig } from './config-loader'
 import { FilterMode, Filters, SerializedFilters } from './filters'
+import { Patch } from './patch'
 import { DEVICE_CONFIG_DIR } from './paths'
 
 export enum ConfigType {
@@ -74,6 +75,10 @@ export interface DeviceConfig {
     dep_files: Filters
     files: Filters
     deprivileged_apks: Filters
+  }
+
+  patches: {
+    text_files: Patch[]
   }
 }
 

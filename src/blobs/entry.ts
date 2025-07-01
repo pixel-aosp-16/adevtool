@@ -18,6 +18,9 @@ export interface BlobEntry {
 
   // Whether to force Kati
   disableSoong?: boolean
+
+  // Apply these patches
+  patches: string[]
 }
 
 export function partPathToSrcPath(partition: string, path: string) {
