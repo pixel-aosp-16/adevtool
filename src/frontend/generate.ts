@@ -83,6 +83,19 @@ export async function enumerateFiles(
       missingFiles.sort((a, b) => a.localeCompare(b))
     }
 
+    // TODO: may not be needed once device repos are completely stripped
+    // Force include files that are to be patched
+    if (patches.length > 0) {
+      for (let patch of patches) {
+        const patchPartition = patch.path.split('/')[0]
+        if (patchPartition == partition) {
+          missingFiles.push(patch.path)
+        }
+      }
+      // Re-sort
+      missingFiles.sort((a, b) => a.localeCompare(b))
+    }
+
     for (let combinedPartPath of missingFiles) {
       let entry = combinedPartPathToEntry(partition, combinedPartPath)
       entry.patches = namedPatches.get(combinedPartPath) ?? [];
