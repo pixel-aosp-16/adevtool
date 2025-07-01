@@ -19,3 +19,9 @@ filters:
   deprivileged_apks:
     prefix:
       - system_ext/priv-app/PixelNfc/
+
+patches:
+  text_files:
+    - path: vendor/etc/gnss/gps.xml
+      apply:
+        - use TLSv1.2-only for SUPL

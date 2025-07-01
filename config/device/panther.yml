@@ -4,6 +4,16 @@ device:
 platform:
   product_makefile: device/google/pantah/aosp_panther.mk
 
+patches:
+  text_files:
+    - path: vendor/etc/init/hw/init.panther.rc
+      apply:
+        - Do not forcibly set camera sound props on Japan SKU
+
+    - path: vendor/etc/init/android.hardware.usb-service.rc
+      apply:
+        - add implementation of port security API
+
 includes:
   - common/gen7pixel.yml
   - common/gs-wireless-charger.yml
