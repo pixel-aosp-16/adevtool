@@ -90,6 +90,7 @@ export async function enumerateFiles(
         const patchPartition = patch.path.split('/')[0]
         if (patchPartition == partition) {
           missingFiles.push(patch.path)
+          console.log(`pushed ${patch.path}`)
         }
       }
       // Re-sort
@@ -125,7 +126,10 @@ export async function resolveOverrides(
 
   // Remove new modules from entries
   for (let path of builtPaths) {
-    namedEntries.delete(path.replace(targetPrefix, ''))
+    const entry = namedEntries.get(path.replace(targetPrefix, ''))
+    if (!entry || entry.patches.length == 0) {
+      namedEntries.delete(path.replace(targetPrefix, ''))
+    }
   }
 
   return builtModules

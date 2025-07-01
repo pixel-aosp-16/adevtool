@@ -69,6 +69,7 @@ const doDevice = (
   useTemp: boolean,
 ) =>
   withTempDir(async tmp => {
+    console.log(JSON.stringify(config.patches))
     // Prepare stock system source
     let wrapBuildId = buildId == undefined ? null : buildId
     let wrapped = await withSpinner('Extracting stock system source', spinner =>
